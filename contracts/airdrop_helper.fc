@@ -1,0 +1,61 @@
+#include "imports/stdlib.fc";
+#include "constants.fc";
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    throw_if(0, in_msg_body.slice_empty?()); ;; ignore empty messages
+
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+    if (flags & 1) {
+        in_msg_body~skip_bits(32);    
+        int op = in_msg_body~load_uint(32);
+        throw_unless(0, op == op::process_claim);
+        slice ds = get_data().begin_parse();
+        int claimed? = ds~load_int(1);  
+        slice airdrop = ds~load_msg_addr();
+        int proof_hash = ds~load_uint(256);
+        int index = ds~load_uint(index_len);
+        return set_data(begin_cell().store_uint(0, 1).store_slice(airdrop).store_uint(proof_hash, 256).store_uint(index, index_len).end_cell());
+    }
+
+    slice sender_address = cs~load_msg_addr();
+
+    int op = in_msg_body~load_uint(32);
+  
+    if (op == op::claim) {
+        throw_unless(error::not_enough_coins, my_balance >= (const::min_balance + const::fee));
+
+        slice ds = get_data().begin_parse();
+        int claimed? = ds~load_int(1);
+        throw_if(error::already_claimed, claimed?);
+
+        slice airdrop = ds~load_msg_addr();
+        int proof_hash = ds~load_uint(256);
+        int index = ds~load_uint(index_len);
+
+        int query_id = in_msg_body~load_uint(64);
+        cell proof = in_msg_body.preload_ref();
+        throw_unless(error::wrong_proof, proof.cell_hash() == proof_hash);
+
+        raw_reserve(const::min_balance, 0);
+
+        send_raw_message(begin_cell()
+            .store_uint(0x10, 6)
+            .store_slice(airdrop)
+            .store_coins(0)
+            .store_uint(0, 107)        
+            .store_uint(op::process_claim, 32)
+            .store_uint(query_id, 64)
+            .store_ref(proof)
+            .store_uint(index, index_len)
+            .end_cell(), 128);
+
+        return set_data(begin_cell().store_uint(1, 1).store_slice(airdrop).store_uint(proof_hash, 256).store_uint(index, index_len).end_cell());
+    }
+
+    throw(0xffff);
+}
+
+(int) get_claimed() method_id {
+    return get_data().begin_parse().preload_int(1);
+}
