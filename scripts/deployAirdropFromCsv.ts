@@ -42,10 +42,12 @@ export async function run(provider: NetworkProvider) {
         };
     });
 
-    writeFileSync(
-        join(__dirname, 'invalid-data.json'),
-        JSON.stringify({ total_amount: invalidAmount, data: invalidData }, undefined, 2)
-    );
+    if (invalidData.length) {
+        writeFileSync(
+            join(__dirname, 'invalid-data.json'),
+            JSON.stringify({ total_amount: invalidAmount, data: invalidData }, undefined, 2)
+        );
+    }
 
     writeFileSync(
         join(__dirname, 'airdrop-data.csv'),
@@ -81,8 +83,15 @@ export async function run(provider: NetworkProvider) {
 
     const jettonMinter = provider.open(JettonMinter.createFromAddress(jettonMinterAddress));
 
-    const adminAddress = provider.sender().address!;
-    const forwardPayload = beginCell().storeUint(0, 32).storeStringTail('Claimed 🔥').endCell();
+    const claimForwardPayloadText = 'Claimed 🔥';
+    const forwardPayload = beginCell().storeUint(0, 32).storeStringTail(claimForwardPayloadText).endCell();
+
+    let adminAddress: Address;
+    if (Address.isAddress(provider.sender().address)) {
+        adminAddress = provider.sender().address!;
+    } else {
+        throw new Error('No sender address provided');
+    }
 
     const airdrop = provider.open(
         Airdrop.createFromConfig(
